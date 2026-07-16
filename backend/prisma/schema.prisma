@@ -1,0 +1,218 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["partialIndexes"]
+  moduleFormat    = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model audit_logs {
+  id         BigInt       @id @default(autoincrement())
+  ticket_id  BigInt
+  actor_id   Int?
+  action     audit_action
+  from_value String?      @db.VarChar(100)
+  to_value   String?      @db.VarChar(100)
+  note       String?
+  created_at DateTime     @default(now()) @db.Timestamptz(6)
+  users      users?       @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tickets    tickets      @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([action], map: "idx_audit_action")
+  @@index([actor_id], map: "idx_audit_actor_id")
+  @@index([ticket_id, created_at], map: "idx_audit_ticket_id")
+}
+
+model notifications {
+  id         BigInt   @id @default(autoincrement())
+  user_id    Int
+  ticket_id  BigInt
+  type       String   @db.VarChar(50)
+  is_read    Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  tickets    tickets  @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_notifications_unread", where: raw("(is_read = false)"))
+}
+
+model piu {
+  id         Int       @id @default(autoincrement())
+  code       String    @unique @db.VarChar(20)
+  name       String    @db.VarChar(255)
+  is_active  Boolean   @default(true)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  ti         ti[]
+  tickets    tickets[]
+}
+
+model ti {
+  id         Int       @id @default(autoincrement())
+  piu_id     Int
+  code       String    @db.VarChar(20)
+  name       String    @db.VarChar(255)
+  is_active  Boolean   @default(true)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  piu        piu       @relation(fields: [piu_id], references: [id], onUpdate: NoAction)
+  tickets    tickets[]
+
+  @@unique([piu_id, code])
+  @@index([piu_id], map: "idx_ti_piu_id", where: raw("(is_active = true)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ticket_attachments {
+  id                  BigInt   @id @default(autoincrement())
+  ticket_id           BigInt
+  file_name           String   @db.VarChar(255)
+  storage_key         String   @db.VarChar(500)
+  mime_type           String   @db.VarChar(150)
+  size_bytes          BigInt
+  uploaded_by_user_id Int?
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  tickets             tickets  @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users               users?   @relation(fields: [uploaded_by_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([ticket_id], map: "idx_attachments_ticket_id")
+}
+
+model ticket_replies {
+  id               BigInt   @id @default(autoincrement())
+  ticket_id        BigInt
+  author_user_id   Int?
+  message          String
+  is_closing_reply Boolean  @default(false)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  users            users?   @relation(fields: [author_user_id], references: [id], onUpdate: NoAction)
+  tickets          tickets  @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([ticket_id, created_at], map: "idx_ticket_replies_ticket_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tickets {
+  id                                       BigInt               @id @default(autoincrement())
+  tracking_number                          String               @unique @db.VarChar(30)
+  piu_id                                   Int
+  ti_id                                    Int
+  software                                 software_type
+  issue_category                           issue_category
+  other_description                        String?
+  submitter_name                           String               @db.VarChar(255)
+  submitter_email                          String               @db.VarChar(255)
+  submitter_phone                          String?              @db.VarChar(50)
+  description                              String
+  status                                   ticket_status        @default(SUBMITTED)
+  priority                                 ticket_priority?
+  assigned_to_user_id                      Int?
+  accepted_by_user_id                      Int?
+  accepted_at                              DateTime?            @db.Timestamptz(6)
+  completed_at                             DateTime?            @db.Timestamptz(6)
+  closed_at                                DateTime?            @db.Timestamptz(6)
+  created_at                               DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime             @default(now()) @db.Timestamptz(6)
+  audit_logs                               audit_logs[]
+  notifications                            notifications[]
+  ticket_attachments                       ticket_attachments[]
+  ticket_replies                           ticket_replies[]
+  users_tickets_accepted_by_user_idTousers users?               @relation("tickets_accepted_by_user_idTousers", fields: [accepted_by_user_id], references: [id], onUpdate: NoAction)
+  users_tickets_assigned_to_user_idTousers users?               @relation("tickets_assigned_to_user_idTousers", fields: [assigned_to_user_id], references: [id], onUpdate: NoAction)
+  piu                                      piu                  @relation(fields: [piu_id], references: [id], onUpdate: NoAction)
+  ti                                       ti                   @relation(fields: [ti_id], references: [id], onUpdate: NoAction)
+
+  @@index([assigned_to_user_id], map: "idx_tickets_assigned_to")
+  @@index([issue_category], map: "idx_tickets_category")
+  @@index([completed_at], map: "idx_tickets_completed_at")
+  @@index([created_at], map: "idx_tickets_created_at")
+  @@index([piu_id], map: "idx_tickets_piu")
+  @@index([software, issue_category, piu_id, created_at], map: "idx_tickets_report_composite")
+  @@index([software], map: "idx_tickets_software")
+  @@index([status], map: "idx_tickets_status")
+  @@index([ti_id], map: "idx_tickets_ti")
+  @@index([tracking_number], map: "idx_tickets_tracking_no")
+}
+
+model users {
+  id                                         Int                  @id @default(autoincrement())
+  full_name                                  String               @db.VarChar(255)
+  email                                      String               @unique @db.VarChar(255)
+  password_hash                              String               @db.VarChar(255)
+  role                                       user_role
+  is_active                                  Boolean              @default(true)
+  last_login_at                              DateTime?            @db.Timestamptz(6)
+  created_at                                 DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at                                 DateTime             @default(now()) @db.Timestamptz(6)
+  audit_logs                                 audit_logs[]
+  notifications                              notifications[]
+  ticket_attachments                         ticket_attachments[]
+  ticket_replies                             ticket_replies[]
+  tickets_tickets_accepted_by_user_idTousers tickets[]            @relation("tickets_accepted_by_user_idTousers")
+  tickets_tickets_assigned_to_user_idTousers tickets[]            @relation("tickets_assigned_to_user_idTousers")
+
+  @@index([role], map: "idx_users_role", where: raw("(is_active = true)"))
+}
+
+enum software_type {
+  TMS
+  FINMAN
+}
+
+enum audit_action {
+  CREATED
+  PRIORITY_SET
+  ASSIGNED
+  REASSIGNED
+  ROUTED_TO_ADMIN
+  STATUS_CHANGED
+  REPLY_ADDED
+  CLOSED
+  REOPENED
+  ATTACHMENT_ADDED
+}
+
+enum issue_category {
+  LOGIN
+  ENROLLMENT
+  ASSESSMENT
+  CERTIFICATION
+  COURSE_DATA
+  BATCH_DATA
+  TRAINEE_DATA
+  CLAIM_1_BILLING
+  CLAIM_2_BILLING
+  CLAIM_3_BILLING
+  LEDGER
+  BUDGET
+  SOE
+  DOUBLE_COLUMN_CASHBOOK
+  OTHER
+}
+
+enum ticket_priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ticket_status {
+  SUBMITTED
+  ACCEPTED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+  REOPENED
+}
+
+enum user_role {
+  ADMIN
+  DEVELOPER
+  CLIENT_PORTAL
+  SYSTEM
+}
