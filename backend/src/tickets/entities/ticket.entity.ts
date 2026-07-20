@@ -1,10 +1,8 @@
-import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('tickets')
 export class Ticket {
-  @PrimaryGeneratedColumn({ type: 'bigint' })
+  @PrimaryGeneratedColumn()
   id: number;
 
   @Column({ unique: true })
@@ -16,18 +14,17 @@ export class Ticket {
   @Column()
   ti_id: number;
 
-  @Column({ type: 'enum', enum: ['TMS', 'FINMAN'] })
+  @Column()
   software: string;
 
-  @Column({ type: 'enum', enum: [
-    'LOGIN', 'ENROLLMENT', 'ASSESSMENT', 'CERTIFICATION', 'COURSE_DATA',
-    'BATCH_DATA', 'TRAINEE_DATA', 'CLAIM_1_BILLING', 'CLAIM_2_BILLING',
-    'CLAIM_3_BILLING', 'LEDGER', 'BUDGET', 'SOE', 'DOUBLE_COLUMN_CASHBOOK', 'OTHER',
-  ] })
+  @Column()
   issue_category: string;
 
   @Column({ type: 'text', nullable: true })
-  other_description?: string;
+  other_description: string | null;
+
+  @Column({ type: 'text' })
+  description: string;
 
   @Column()
   submitter_name: string;
@@ -35,34 +32,29 @@ export class Ticket {
   @Column()
   submitter_email: string;
 
-  @Column({ nullable: true })
-  submitter_phone: string;
+  @Column({ type: 'varchar', nullable: true })
+  submitter_phone: string | null;
 
-  @Column({ type: 'text' })
-  description: string;
-
-  @Column({ type: 'enum', enum: [
-    'SUBMITTED', 'ACCEPTED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED', 'REOPENED',
-  ], default: 'SUBMITTED' })
+  @Column({ default: 'SUBMITTED' })
   status: string;
 
-  @Column({ type: 'enum', enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], nullable: true })
-  priority?: string;
+  @Column({ type: 'varchar', nullable: true })
+  priority: string | null;
 
   @Column({ type: 'int', nullable: true })
-  assigned_to_user_id?: number;
+  assigned_to_user_id: number | null;
 
   @Column({ type: 'int', nullable: true })
-  accepted_by_user_id?: number;
+  accepted_by_user_id: number | null;
 
   @Column({ type: 'timestamptz', nullable: true })
-  accepted_at?: Date;
+  accepted_at: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
-  completed_at?: Date;
+  completed_at: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
-  closed_at?: Date;
+  closed_at: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

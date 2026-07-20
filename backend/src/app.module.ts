@@ -10,6 +10,8 @@ import { TicketsModule } from './tickets/tickets.module';
 import { PiuModule } from './piu/piu.module';
 import { TiModule } from './ti/ti.module';
 import { CategoriesModule } from './categories/categories.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { DevelopersModule } from './developers/developers.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { CategoriesModule } from './categories/categories.module';
     PiuModule,
     TiModule,
     CategoriesModule,
+    NotificationsModule,
+    DevelopersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

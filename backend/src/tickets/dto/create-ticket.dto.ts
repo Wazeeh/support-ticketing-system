@@ -1,9 +1,12 @@
 import { IsInt, IsString, IsEmail, IsOptional, IsIn, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateTicketDto {
+  @Type(() => Number)
   @IsInt()
   piu_id: number;
 
+  @Type(() => Number)
   @IsInt()
   ti_id: number;
 

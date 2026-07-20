@@ -8,20 +8,20 @@ export class AuditLog {
   @Column()
   ticket_id: number;
 
-  @Column({ nullable: true })
-  actor_id: number;
+  @Column({ type: 'int', nullable: true })
+  actor_id: number | null;
 
   @Column()
   action: string;
 
-  @Column({ nullable: true })
-  from_value: string;
+  @Column({ type: 'varchar', nullable: true })
+  from_value: string | null;
 
-  @Column({ nullable: true })
-  to_value: string;
+  @Column({ type: 'varchar', nullable: true })
+  to_value: string | null;
 
-  @Column({ nullable: true, type: 'text' })
-  note: string;
+  @Column({ type: 'text', nullable: true })
+  note: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

@@ -21,7 +21,7 @@ export function TicketListPage() {
         .then((res) => res.data),
   });
 
-  const totalPages = data ? Math.ceil(data.pagination.total / pageSize) : 1;
+  const totalPages = data ? Math.ceil(data.total / pageSize) : 1;
 
   return (
     <AdminDashboardLayout>
