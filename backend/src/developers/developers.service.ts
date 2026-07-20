@@ -7,13 +7,17 @@ import { UserLookup } from '../notifications/entities/user-lookup.entity';
 export class DevelopersService {
   constructor(
     @InjectRepository(UserLookup)
-    private userLookupRepo: Repository<UserLookup>,
+    private usersRepo: Repository<UserLookup>,
   ) {}
 
-  async findAllActive(): Promise<UserLookup[]> {
-    return this.userLookupRepo.find({
+  async findAllActive() {
+    const developers = await this.usersRepo.find({
       where: { role: 'DEVELOPER', is_active: true },
-      order: { full_name: 'ASC' },
     });
+
+    return developers.map((dev) => ({
+      id: dev.id,
+      full_name: dev.full_name,
+    }));
   }
 }

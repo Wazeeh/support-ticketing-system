@@ -10,7 +10,6 @@ export interface Notification {
 
 export const notificationService = {
   listUnread: () =>
-    apiClient.get<Notification[]>('/admin/notifications', { params: { unread_only: true } }),
-  markRead: (id: number) => apiClient.patch(`/admin/notifications/${id}/read`),
-  markAllRead: () => apiClient.patch('/admin/notifications/read-all'),
+    apiClient.get<Notification[]>('/notifications', { params: { unread_only: true } }),
+  markRead: (id: number) => apiClient.patch(`/notifications/${id}/read`),
 };

@@ -1,5 +1,6 @@
 // services/developerService.ts
 import { apiClient } from './apiClient';
+import { useAuthStore } from '../store/authStore';
 
 export interface Developer {
   id: number;
@@ -8,5 +9,9 @@ export interface Developer {
 }
 
 export const developerService = {
-  listDevelopers: () => apiClient.get<Developer[]>('/admin/developers'),
+  listDevelopers: () => {
+    const role = useAuthStore.getState().user?.role;
+    const basePath = role === 'DEVELOPER' ? '/developer/developers' : '/admin/developers';
+    return apiClient.get<Developer[]>(basePath);
+  },
 };

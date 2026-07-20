@@ -71,6 +71,19 @@ export class TicketsController {
     return ticket;
   }
 
+  // Role-agnostic: Admin sees any ticket's timeline; Developer only sees
+  // timelines for tickets assigned to them (enforced in the service).
+  @Get(':id/timeline')
+  @UseGuards(JwtAuthGuard)
+  async getTimeline(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request,
+  ) {
+    const actorUserId = (req.user as any).userId;
+    const role = (req.user as any).role;
+    return this.ticketsService.getTimeline(id, actorUserId, role);
+  }
+
   @Patch(':id/priority')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')

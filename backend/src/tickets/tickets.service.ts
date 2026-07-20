@@ -197,7 +197,60 @@ export class TicketsService {
 
     return { ...ticket, replies, timeline };
   }
+// GET /tickets/:id/timeline — Admin sees any ticket's timeline;
+  // Developer only sees timelines for tickets assigned to them.
+  async getTimeline(
+    ticketId: number,
+    actorUserId: number,
+    role: string,
+  ): Promise<{ events: any[]; duration_summary: { time_in_status: Record<string, number> } }> {
+    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+    if (!ticket) {
+      throw new NotFoundException(`No ticket found with id ${ticketId}`);
+    }
 
+    if (role === 'DEVELOPER' && ticket.assigned_to_user_id !== actorUserId) {
+      throw new ForbiddenException('You are not the assigned developer for this ticket');
+    }
+
+    const logs = await this.auditLogsRepo.find({
+      where: { ticket_id: ticketId },
+      order: { created_at: 'ASC' },
+    });
+
+    const actorIds = [...new Set(logs.map((l) => l.actor_id).filter((id): id is number => id != null))];
+    const actors = actorIds.length
+      ? await this.usersRepo.find({ where: actorIds.map((id) => ({ id })) })
+      : [];
+    const actorMap = new Map(actors.map((a) => [a.id, a]));
+
+    const events = logs.map((l) => {
+      const actor = l.actor_id != null ? actorMap.get(l.actor_id) : null;
+      return {
+        id: String(l.id),
+        action: l.action,
+        from_value: l.from_value,
+        to_value: l.to_value,
+        note: l.note,
+        timestamp: l.created_at,
+        actor_name: actor ? actor.full_name : null,
+        actor_role: actor ? actor.role : null,
+      };
+    });
+
+    const statusChanges = logs.filter((l) => l.action === 'STATUS_CHANGED');
+    const time_in_status: Record<string, number> = {};
+    for (let i = 0; i < statusChanges.length; i++) {
+      const current = statusChanges[i];
+      const next = statusChanges[i + 1];
+      const statusName = current.to_value ?? 'UNKNOWN';
+      const endTime = next ? next.created_at.getTime() : Date.now();
+      const hours = (endTime - current.created_at.getTime()) / (1000 * 60 * 60);
+      time_in_status[statusName] = (time_in_status[statusName] ?? 0) + Math.round(hours * 100) / 100;
+    }
+
+    return { events, duration_summary: { time_in_status } };
+  }
   async setPriority(ticketId: number, dto: SetPriorityDto, actorUserId: number): Promise<Ticket> {
     const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
     if (!ticket) {
