@@ -1,6 +1,13 @@
-import { IsIn } from 'class-validator';
+import { IsEnum } from 'class-validator';
+
+export enum TicketPriority {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  URGENT = 'URGENT',
+}
 
 export class SetPriorityDto {
-  @IsIn(['LOW', 'MEDIUM', 'HIGH', 'URGENT'])
-  priority: string;
+  @IsEnum(TicketPriority)
+  priority!: TicketPriority;
 }

@@ -12,6 +12,7 @@ import { TiModule } from './ti/ti.module';
 import { CategoriesModule } from './categories/categories.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DevelopersModule } from './developers/developers.module';
+import { AttachmentsModule } from './attachments/attachments.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { DevelopersModule } from './developers/developers.module';
     CategoriesModule,
     NotificationsModule,
     DevelopersModule,
+    AttachmentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
