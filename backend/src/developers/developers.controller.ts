@@ -15,3 +15,15 @@ export class DevelopersController {
     return this.developersService.findAllActive();
   }
 }
+
+@Controller('developer/developers')
+export class DeveloperDevelopersController {
+  constructor(private readonly developersService: DevelopersService) {}
+
+  @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('DEVELOPER')
+  async findAll() {
+    return this.developersService.findAllActive();
+  }
+}
