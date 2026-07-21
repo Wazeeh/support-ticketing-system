@@ -9,11 +9,13 @@ import { AuditLog } from '../audit-logs/entities/audit-log.entity';
 import { TicketReply } from '../ticket-replies/entities/ticket-reply.entity';
 import { UserLookup } from '../notifications/entities/user-lookup.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AttachmentsModule } from '../attachments/attachments.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Ticket, AuditLog, TicketReply, UserLookup]),
     NotificationsModule,
+    AttachmentsModule,
   ],
   controllers: [TicketsController, TicketsAdminAliasController, TicketsDeveloperAliasController],
   providers: [TicketsService],

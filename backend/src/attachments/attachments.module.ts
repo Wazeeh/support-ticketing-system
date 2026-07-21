@@ -10,5 +10,6 @@ import { AuditLog } from '../audit-logs/entities/audit-log.entity';
   imports: [TypeOrmModule.forFeature([TicketAttachment, Ticket, AuditLog])],
   controllers: [AttachmentsController],
   providers: [AttachmentsService],
+  exports: [AttachmentsService],
 })
 export class AttachmentsModule {}

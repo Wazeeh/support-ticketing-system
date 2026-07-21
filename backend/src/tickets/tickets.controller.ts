@@ -1,5 +1,5 @@
-import { Controller, Post, Patch, Get, Body, Param, Query, ParseIntPipe, NotFoundException, UseGuards, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Controller, Post, Patch, Get, Body, Param, Query, ParseIntPipe, NotFoundException, UseGuards, Req, UseInterceptors, UploadedFiles } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -15,12 +15,12 @@ export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('attachment'))
+  @UseInterceptors(FilesInterceptor('attachments', 10))
   async create(
     @Body() dto: CreateTicketDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.ticketsService.create(dto, file);
+    return this.ticketsService.create(dto, files);
   }
 
   @Get('track/:trackingNumber')

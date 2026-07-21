@@ -13,6 +13,7 @@ import { ReassignDeveloperDto } from './dto/reassign-developer.dto';
 import { RouteToAdminDto } from './dto/route-to-admin.dto';
 import { VALID_CATEGORIES_BY_SOFTWARE } from '../common/category-software-map';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AttachmentsService } from '../attachments/attachments.service';
 
 @Injectable()
 export class TicketsService {
@@ -26,9 +27,10 @@ export class TicketsService {
     @InjectRepository(UserLookup)
     private usersRepo: Repository<UserLookup>,
     private notificationsService: NotificationsService,
+    private attachmentsService: AttachmentsService,
   ) {}
 
-  async create(dto: CreateTicketDto, file?: Express.Multer.File): Promise<Ticket> {
+  async create(dto: CreateTicketDto, files?: Express.Multer.File[]): Promise<Ticket> {
     const allowedCategories = VALID_CATEGORIES_BY_SOFTWARE[dto.software];
     if (!allowedCategories || !allowedCategories.includes(dto.issue_category)) {
       throw new BadRequestException(
@@ -38,10 +40,6 @@ export class TicketsService {
 
     if (dto.issue_category === 'OTHER' && !dto.other_description) {
       throw new BadRequestException('other_description is required when issue_category is OTHER');
-    }
-
-    if (file) {
-      console.log(`Received attachment: ${file.originalname}, ${file.size} bytes (not yet saved to S3 — pending teammate's implementation)`);
     }
 
     const ticket = this.ticketsRepo.create({
@@ -54,6 +52,10 @@ export class TicketsService {
     const savedTicket = await this.ticketsRepo.findOne({ where: { id: initialSave.id } });
     if (!savedTicket) {
       throw new NotFoundException('Ticket was created but could not be re-fetched');
+    }
+
+    if (files && files.length > 0) {
+      await this.attachmentsService.uploadFiles(savedTicket.id, files, null);
     }
 
     await this.notificationsService.notifyAllAdmins(
@@ -197,7 +199,8 @@ export class TicketsService {
 
     return { ...ticket, replies, timeline };
   }
-// GET /tickets/:id/timeline — Admin sees any ticket's timeline;
+
+  // GET /tickets/:id/timeline — Admin sees any ticket's timeline;
   // Developer only sees timelines for tickets assigned to them.
   async getTimeline(
     ticketId: number,
@@ -251,6 +254,7 @@ export class TicketsService {
 
     return { events, duration_summary: { time_in_status } };
   }
+
   async setPriority(ticketId: number, dto: SetPriorityDto, actorUserId: number): Promise<Ticket> {
     const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
     if (!ticket) {
