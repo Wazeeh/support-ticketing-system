@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+
 import { PiuTiSelector } from '../../../components/ticket/PiuTiSelector';
 import { SoftwareSelector } from '../../../components/ticket/SoftwareSelector';
 import { IssueCategorySelector } from '../../../components/ticket/IssueCategorySelector';
@@ -6,6 +8,7 @@ import { AttachmentUploader } from '../../../components/ticket/AttachmentUploade
 import { RichTextEditor } from '../../../components/shared/RichTextEditor';
 import { Button } from '../../../components/shared/Button';
 import { ticketService } from '../../../services/ticketService';
+
 import type { SoftwareType } from '../../../types/ticket';
 
 export function SubmitTicketPage() {
@@ -19,55 +22,169 @@ export function SubmitTicketPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trackingNumber, setTrackingNumber] = useState<string | null>(null);
+  const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleSoftwareChange = (value: SoftwareType) => {
     setSoftware(value);
-    setCategory(null); // clear category when software changes, per spec §6.2
+    setCategory(null);
+    setOtherDescription('');
   };
 
   const validate = (): string | null => {
-    if (!piuId) return 'Please select a PIU';
-    if (!tiId) return 'Please select a TI';
-    if (!software) return 'Please select software';
-    if (!category) return 'Please select an issue category';
-    if (category === 'OTHER' && otherDescription.trim().length < 10) {
-      return 'Please describe the issue (min 10 characters)';
+    if (!piuId) {
+      return 'Please select a PIU';
     }
-    if (!name.trim()) return 'Please enter your name';
-    if (!/^\S+@\S+\.\S+$/.test(email)) return 'Please enter a valid email';
-    if (!description.trim()) return 'Please enter a description';
+
+    if (!tiId) {
+      return 'Please select a TI';
+    }
+
+    if (!software) {
+      return 'Please select software';
+    }
+
+    if (!category) {
+      return 'Please select an issue category';
+    }
+
+    if (
+      category === 'OTHER' &&
+      otherDescription.trim().length < 10
+    ) {
+      return 'Please describe the issue with at least 10 characters';
+    }
+
+    if (!name.trim()) {
+      return 'Please enter your name';
+    }
+
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      return 'Please enter a valid email';
+    }
+
+    if (!description.trim()) {
+      return 'Please enter a description';
+    }
+
     return null;
+  };
+
+  const handleCopy = async () => {
+    if (!trackingNumber) {
+      return;
+    }
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(trackingNumber);
+      } else {
+        const textArea = document.createElement('textarea');
+
+        textArea.value = trackingNumber;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+
+        document.body.appendChild(textArea);
+
+        textArea.focus();
+        textArea.select();
+
+        const copiedSuccessfully = document.execCommand('copy');
+
+        document.body.removeChild(textArea);
+
+        if (!copiedSuccessfully) {
+          throw new Error('Copy failed');
+        }
+      }
+
+      setCopied(true);
+
+      window.setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch {
+      setError(
+        'Could not copy automatically. Please select and copy the tracking number manually.',
+      );
+    }
   };
 
   const handleSubmit = async () => {
     const validationError = validate();
+
     if (validationError) {
       setError(validationError);
       return;
     }
+
     setError(null);
     setSubmitting(true);
 
     try {
       const formData = new FormData();
+
       formData.append('piu_id', String(piuId));
       formData.append('ti_id', String(tiId));
-      formData.append('software', software!);
-      formData.append('issue_category', category!);
-      if (otherDescription) formData.append('other_description', otherDescription);
-      formData.append('submitter_name', name);
-      formData.append('submitter_email', email);
-      if (phone) formData.append('submitter_phone', phone);
-      formData.append('description', description);
-      files.forEach((f) => formData.append('attachments', f));
+      formData.append('software', software as SoftwareType);
+      formData.append('issue_category', category as string);
 
-      const res = await ticketService.submitTicket(formData);
-      setTrackingNumber(res.data.tracking_number);
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Something went wrong. Please try again.');
+      if (otherDescription.trim()) {
+        formData.append(
+          'other_description',
+          otherDescription.trim(),
+        );
+      }
+
+      formData.append('submitter_name', name.trim());
+      formData.append('submitter_email', email.trim());
+
+      if (phone.trim()) {
+        formData.append('submitter_phone', phone.trim());
+      }
+
+      formData.append('description', description);
+
+      files.forEach((file) => {
+        formData.append('attachments', file);
+      });
+
+      const response =
+        await ticketService.submitTicket(formData);
+
+      setTrackingNumber(
+        response.data.tracking_number,
+      );
+
+      setConfirmationEmailSent(
+        response.data.confirmation_email_sent,
+      );
+    } catch (err: unknown) {
+      const possibleError = err as {
+        response?: {
+          data?: {
+            message?: string | string[];
+          };
+        };
+      };
+
+      const message =
+        possibleError.response?.data?.message;
+
+      if (Array.isArray(message)) {
+        setError(message.join(', '));
+      } else {
+        setError(
+          message ??
+            'Something went wrong. Please try again.',
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -75,37 +192,176 @@ export function SubmitTicketPage() {
 
   if (trackingNumber) {
     return (
-      <div style={{ maxWidth: 480, margin: '60px auto', textAlign: 'center' }}>
-        <h2>Ticket Submitted</h2>
+      <div
+        style={{
+          maxWidth: '560px',
+          margin: '60px auto',
+          padding: '0 20px',
+          textAlign: 'center',
+        }}
+      >
+        <h2
+          style={{
+            marginBottom: '12px',
+          }}
+        >
+          Ticket Submitted
+        </h2>
+
         <p>Your tracking number is:</p>
-        <div style={{
-          fontSize: '1.5rem', fontWeight: 700, padding: '12px 20px',
-          backgroundColor: '#f3f4f6', borderRadius: '8px', display: 'inline-block', margin: '12px 0',
-        }}>
+
+        <div
+          style={{
+            display: 'inline-block',
+            maxWidth: '100%',
+            margin: '12px 0',
+            padding: '14px 22px',
+            borderRadius: '8px',
+            backgroundColor: '#f3f4f6',
+            color: '#111827',
+            fontSize: '1.5rem',
+            fontWeight: 700,
+            overflowWrap: 'anywhere',
+          }}
+        >
           {trackingNumber}
         </div>
-        <p>
+
+        <div
+          style={{
+            marginTop: '8px',
+          }}
+        >
           <button
-            onClick={() => navigator.clipboard.writeText(trackingNumber)}
-            style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}
+            type="button"
+            onClick={handleCopy}
+            style={{
+              padding: '7px 16px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              backgroundColor: 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+            }}
           >
-            Copy
+            {copied ? 'Copied!' : 'Copy'}
           </button>
-        </p>
-        <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>
-          A confirmation email has been sent to {email}. Use this tracking number to check your ticket status anytime.
-        </p>
+        </div>
+
+        {confirmationEmailSent ? (
+          <p
+            style={{
+              marginTop: '20px',
+              color: '#6b7280',
+              fontSize: '0.9rem',
+              lineHeight: 1.6,
+            }}
+          >
+            A confirmation email has been sent to{' '}
+            <strong>{email}</strong>. Use this tracking number
+            to check your ticket status anytime.
+          </p>
+        ) : (
+          <p
+            style={{
+              marginTop: '20px',
+              color: '#d97706',
+              fontSize: '0.9rem',
+              lineHeight: 1.6,
+            }}
+          >
+            Your ticket was submitted successfully, but the
+            confirmation email could not be sent. Please save
+            the tracking number.
+          </p>
+        )}
+
+        {error && (
+          <p
+            style={{
+              marginTop: '16px',
+              color: '#dc2626',
+            }}
+          >
+            {error}
+          </p>
+        )}
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '12px',
+            flexWrap: 'wrap',
+            marginTop: '28px',
+          }}
+        >
+          <Link
+            to="/track"
+            style={{
+              padding: '10px 18px',
+              borderRadius: '8px',
+              backgroundColor: '#2563eb',
+              color: '#ffffff',
+              textDecoration: 'none',
+              fontWeight: 600,
+            }}
+          >
+            Track Ticket
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = '/';
+            }}
+            style={{
+              padding: '10px 18px',
+              border: '1px solid #6b7280',
+              borderRadius: '8px',
+              backgroundColor: 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Submit Another Ticket
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{ maxWidth: 640, margin: '40px auto', padding: '0 16px' }}>
+    <div
+      style={{
+        maxWidth: '640px',
+        margin: '40px auto',
+        padding: '0 16px 50px',
+      }}
+    >
       <h1>Submit a Support Ticket</h1>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '24px' }}>
-        <PiuTiSelector piuId={piuId} tiId={tiId} onPiuChange={setPiuId} onTiChange={setTiId} />
-        <SoftwareSelector value={software} onChange={handleSoftwareChange} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          marginTop: '24px',
+        }}
+      >
+        <PiuTiSelector
+          piuId={piuId}
+          tiId={tiId}
+          onPiuChange={setPiuId}
+          onTiChange={setTiId}
+        />
+
+        <SoftwareSelector
+          value={software}
+          onChange={handleSoftwareChange}
+        />
+
         <IssueCategorySelector
           software={software}
           value={category}
@@ -115,53 +371,143 @@ export function SubmitTicketPage() {
         />
 
         <div>
-          <label style={{ display: 'block', marginBottom: 4, fontSize: '0.875rem', fontWeight: 600 }}>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: '4px',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+            }}
+          >
             Your Name
           </label>
+
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+            onChange={(event) =>
+              setName(event.target.value)
+            }
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '8px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+            }}
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: '0.875rem', fontWeight: 600 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '12px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div
+            style={{
+              flex: '1 1 240px',
+            }}
+          >
+            <label
+              style={{
+                display: 'block',
+                marginBottom: '4px',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+              }}
+            >
               Email
             </label>
+
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+              onChange={(event) =>
+                setEmail(event.target.value)
+              }
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+              }}
             />
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: '0.875rem', fontWeight: 600 }}>
+
+          <div
+            style={{
+              flex: '1 1 240px',
+            }}
+          >
+            <label
+              style={{
+                display: 'block',
+                marginBottom: '4px',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+              }}
+            >
               Phone (optional)
             </label>
+
             <input
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+              onChange={(event) =>
+                setPhone(event.target.value)
+              }
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+              }}
             />
           </div>
         </div>
 
         <div>
-          <label style={{ display: 'block', marginBottom: 4, fontSize: '0.875rem', fontWeight: 600 }}>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: '4px',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+            }}
+          >
             Description
           </label>
-          <RichTextEditor value={description} onChange={setDescription} />
+
+          <RichTextEditor
+            value={description}
+            onChange={setDescription}
+          />
         </div>
 
-        <AttachmentUploader files={files} onChange={setFiles} />
+        <AttachmentUploader
+          files={files}
+          onChange={setFiles}
+        />
 
-        {error && <p style={{ color: '#dc2626' }}>{error}</p>}
+        {error && (
+          <p
+            style={{
+              color: '#dc2626',
+            }}
+          >
+            {error}
+          </p>
+        )}
 
-        <Button onClick={handleSubmit} disabled={submitting}>
-          {submitting ? 'Submitting...' : 'Submit Ticket'}
+        <Button
+          onClick={handleSubmit}
+          disabled={submitting}
+        >
+          {submitting
+            ? 'Submitting...'
+            : 'Submit Ticket'}
         </Button>
       </div>
     </div>

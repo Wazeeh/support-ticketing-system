@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
@@ -13,10 +15,14 @@ import { CategoriesModule } from './categories/categories.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DevelopersModule } from './developers/developers.module';
 import { AttachmentsModule } from './attachments/attachments.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+
     TypeOrmModule.forRoot({
       type: 'postgres',
       url: process.env.DATABASE_URL,
@@ -26,6 +32,8 @@ import { AttachmentsModule } from './attachments/attachments.module';
         rejectUnauthorized: false,
       },
     }),
+
+    MailModule,
     AuthModule,
     PrismaModule,
     ReportsModule,
@@ -37,7 +45,9 @@ import { AttachmentsModule } from './attachments/attachments.module';
     DevelopersModule,
     AttachmentsModule,
   ],
+
   controllers: [AppController],
+
   providers: [AppService],
 })
 export class AppModule {}
