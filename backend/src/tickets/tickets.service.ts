@@ -15,6 +15,13 @@ import { VALID_CATEGORIES_BY_SOFTWARE } from '../common/category-software-map';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AttachmentsService } from '../attachments/attachments.service';
 
+export interface CreateTicketResponse {
+  ticket_id: number;
+  tracking_number: string;
+  status: string;
+  created_at: Date;
+}
+
 @Injectable()
 export class TicketsService {
   constructor(
@@ -25,12 +32,12 @@ export class TicketsService {
     @InjectRepository(TicketReply)
     private ticketRepliesRepo: Repository<TicketReply>,
     @InjectRepository(UserLookup)
-    private usersRepo: Repository<UserLookup>,
-    private notificationsService: NotificationsService,
-    private attachmentsService: AttachmentsService,
+    private readonly usersRepo: Repository<UserLookup>,
+    private readonly notificationsService: NotificationsService,
+    private readonly attachmentsService: AttachmentsService,
   ) {}
 
-  async create(dto: CreateTicketDto, files?: Express.Multer.File[]): Promise<Ticket> {
+  async create(dto: CreateTicketDto, files?: Express.Multer.File[]): Promise<CreateTicketResponse> {
     const allowedCategories = VALID_CATEGORIES_BY_SOFTWARE[dto.software];
     if (!allowedCategories || !allowedCategories.includes(dto.issue_category)) {
       throw new BadRequestException(
@@ -49,7 +56,10 @@ export class TicketsService {
 
     const initialSave = await this.ticketsRepo.save(ticket);
 
-    const savedTicket = await this.ticketsRepo.findOne({ where: { id: initialSave.id } });
+    const savedTicket = await this.ticketsRepo.findOne({
+      where: { id: initialSave.id },
+    });
+
     if (!savedTicket) {
       throw new NotFoundException('Ticket was created but could not be re-fetched');
     }
@@ -64,7 +74,12 @@ export class TicketsService {
       `New ticket ${savedTicket.tracking_number} submitted`,
     );
 
-    return savedTicket;
+    return {
+      ticket_id: savedTicket.id,
+      tracking_number: savedTicket.tracking_number,
+      status: savedTicket.status,
+      created_at: savedTicket.created_at,
+    };
   }
 
   async findByTrackingNumber(trackingNumber: string): Promise<Ticket | null> {
@@ -99,84 +114,126 @@ export class TicketsService {
       where: { ticket_id: ticketId },
       order: { created_at: 'ASC' },
     });
-
     const actorIds = [...new Set(
-      logs
-        .map((log) => log.actor_id)
-        .filter((id): id is number => id != null),
-    )];
-    const actors = actorIds.length
-      ? await this.usersRepo.find({ where: { id: In(actorIds) } })
-      : [];
-    const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
+  logs
+    .map((log) => log.actor_id)
+    .filter((id): id is number => id != null),
+)];
+const actors = actorIds.length
+  ? await this.usersRepo.find({ where: { id: In(actorIds) } })
+  : [];
+const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
 
-    const events = logs.map((log) => {
-      const actor = log.actor_id != null
-        ? actorsById.get(log.actor_id)
-        : undefined;
+const events = logs.map((log) => {
+  const actor = log.actor_id != null
+    ? actorsById.get(log.actor_id)
+    : undefined;
 
-      return {
-        id: log.id,
-        action: log.action,
-        from_value: log.from_value,
-        to_value: log.to_value,
-        note: log.note,
-        timestamp: log.created_at,
-        actor_name: actor?.full_name ?? null,
-        actor_role: actor?.role ?? null,
-      };
-    });
+  return {
+    id: log.id,
+    action: log.action,
+    from_value: log.from_value,
+    to_value: log.to_value,
+    note: log.note,
+    timestamp: log.created_at,
+    actor_name: actor?.full_name ?? null,
+    actor_role: actor?.role ?? null,
+  };
+});
 
-    const statusChanges = logs.filter(
-      (log) => log.action === 'STATUS_CHANGED',
-    );
-    const time_in_status: Record<string, number> = {};
+const statusChanges = logs.filter(
+  (log) => log.action === 'STATUS_CHANGED',
+);
+const time_in_status: Record<string, number> = {};
 
-    for (let index = 0; index < statusChanges.length; index++) {
-      const current = statusChanges[index];
-      const next = statusChanges[index + 1];
-      const statusName = current.to_value ?? 'UNKNOWN';
-      const endTime = next
-        ? next.created_at.getTime()
-        : Date.now();
-      const hours =
-        (endTime - current.created_at.getTime()) /
-        (1000 * 60 * 60);
+for (let index = 0; index < statusChanges.length; index++) {
+  const current = statusChanges[index];
+  const next = statusChanges[index + 1];
+  const statusName = current.to_value ?? 'UNKNOWN';
+  const endTime = next
+    ? next.created_at.getTime()
+    : Date.now();
+  const hours =
+    (endTime - current.created_at.getTime()) /
+    (1000 * 60 * 60);
 
-      time_in_status[statusName] =
-        (time_in_status[statusName] ?? 0) +
-        Math.round(hours * 100) / 100;
-    }
+  time_in_status[statusName] =
+    (time_in_status[statusName] ?? 0) +
+    Math.round(hours * 100) / 100;
+}
 
-    return {
-      events,
-      duration_summary: { time_in_status },
-    };
+return {
+  events,
+  duration_summary: { time_in_status },
+};
+}
+
+// GET /admin/tickets/:id — admin has no ownership restriction.
+async findOneDetail(ticketId: number): Promise<Ticket & { replies: TicketReply[]; timeline: AuditLog[]; attachments: any[] }> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
   }
 
-  // GET /admin/tickets/:id — admin has no ownership restriction.
-  async findOneDetail(ticketId: number): Promise<Ticket & { replies: TicketReply[]; timeline: AuditLog[]; attachments: any[] }> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
+  const replies = await this.ticketRepliesRepo.find({
+    where: { ticket_id: ticketId },
+    order: { created_at: 'ASC' },
+  });
 
-    const replies = await this.ticketRepliesRepo.find({
-      where: { ticket_id: ticketId },
-      order: { created_at: 'ASC' },
+  const timeline = await this.auditLogsRepo.find({
+    where: { ticket_id: ticketId },
+    order: { created_at: 'ASC' },
+  });
+
+  const attachments = await this.attachmentsService.listForTicket(ticketId);
+
+  return { ...ticket, replies, timeline, attachments };
+}
+
+async findAll(params: {
+  search?: string;
+  status?: string;
+  priority?: string;
+  software?: string;
+  piu_id?: number;
+  page?: number;
+  page_size?: number;
+}): Promise<{ data: Ticket[]; total: number; page: number; page_size: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  const pageSize = params.page_size && params.page_size > 0 ? params.page_size : 25;
+
+  const query = this.ticketsRepo.createQueryBuilder('ticket');
+
+  if (params.search) {
+    query.andWhere('ticket.tracking_number ILIKE :search', {
+      search: `%${params.search}%`,
     });
-
-    const timeline = await this.auditLogsRepo.find({
-      where: { ticket_id: ticketId },
-      order: { created_at: 'ASC' },
-    });
-
-    const attachments = await this.attachmentsService.listForTicket(ticketId);
-
-    return { ...ticket, replies, timeline, attachments };
+  }
+  if (params.status) {
+    query.andWhere('ticket.status = :status', { status: params.status });
+  }
+  if (params.priority) {
+    query.andWhere('ticket.priority = :priority', { priority: params.priority });
+  }
+  if (params.software) {
+    query.andWhere('ticket.software = :software', { software: params.software });
+  }
+  if (params.piu_id) {
+    query.andWhere('ticket.piu_id = :piu_id', { piu_id: params.piu_id });
   }
 
-  async findAll(params: {
+  query.orderBy('ticket.created_at', 'DESC');
+  query.skip((page - 1) * pageSize).take(pageSize);
+
+  const [data, total] = await query.getManyAndCount();
+
+  return { data, total, page, page_size: pageSize };
+}
+// GET /developer/tickets — hard-scoped to assigned_to_user_id, never
+// derived from a client-supplied param.
+async findAllForDeveloper(
+  developerId: number,
+  params: {
     search?: string;
     status?: string;
     priority?: string;
@@ -184,463 +241,452 @@ export class TicketsService {
     piu_id?: number;
     page?: number;
     page_size?: number;
-  }): Promise<{ data: Ticket[]; total: number; page: number; page_size: number }> {
-    const page = params.page && params.page > 0 ? params.page : 1;
-    const pageSize = params.page_size && params.page_size > 0 ? params.page_size : 25;
+  },
+): Promise<{ data: Ticket[]; total: number; page: number; page_size: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  const pageSize = params.page_size && params.page_size > 0 ? params.page_size : 25;
 
-    const query = this.ticketsRepo.createQueryBuilder('ticket');
+  const query = this.ticketsRepo.createQueryBuilder('ticket');
+  query.where('ticket.assigned_to_user_id = :developerId', { developerId });
 
-    if (params.search) {
-      query.andWhere('ticket.tracking_number ILIKE :search', { search: `%${params.search}%` });
-    }
-    if (params.status) {
-      query.andWhere('ticket.status = :status', { status: params.status });
-    }
-    if (params.priority) {
-      query.andWhere('ticket.priority = :priority', { priority: params.priority });
-    }
-    if (params.software) {
-      query.andWhere('ticket.software = :software', { software: params.software });
-    }
-    if (params.piu_id) {
-      query.andWhere('ticket.piu_id = :piu_id', { piu_id: params.piu_id });
-    }
-
-    query.orderBy('ticket.created_at', 'DESC');
-    query.skip((page - 1) * pageSize).take(pageSize);
-
-    const [data, total] = await query.getManyAndCount();
-
-    return { data, total, page, page_size: pageSize };
+  if (params.search) {
+    query.andWhere('ticket.tracking_number ILIKE :search', {
+      search: `%${params.search}%`,
+    });
+  }
+  if (params.status) {
+    query.andWhere('ticket.status = :status', { status: params.status });
+  }
+  if (params.priority) {
+    query.andWhere('ticket.priority = :priority', { priority: params.priority });
+  }
+  if (params.software) {
+    query.andWhere('ticket.software = :software', { software: params.software });
+  }
+  if (params.piu_id) {
+    query.andWhere('ticket.piu_id = :piu_id', { piu_id: params.piu_id });
   }
 
-  // GET /developer/tickets — hard-scoped to assigned_to_user_id, never
-  // derived from a client-supplied param.
-  async findAllForDeveloper(
-    developerId: number,
-    params: {
-      search?: string;
-      status?: string;
-      priority?: string;
-      software?: string;
-      piu_id?: number;
-      page?: number;
-      page_size?: number;
+  query.orderBy('ticket.created_at', 'DESC');
+  query.skip((page - 1) * pageSize).take(pageSize);
+
+  const [data, total] = await query.getManyAndCount();
+
+  return { data, total, page, page_size: pageSize };
+}
+
+// GET /developer/tickets/:id — 403 if the caller isn't the assignee.
+async findOneForDeveloper(
+  ticketId: number,
+  actorUserId: number,
+): Promise<Ticket & { replies: TicketReply[]; timeline: AuditLog[]; attachments: any[] }> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.assigned_to_user_id !== actorUserId) {
+    throw new ForbiddenException('You are not the assigned developer for this ticket');
+  }
+
+  const replies = await this.ticketRepliesRepo.find({
+    where: { ticket_id: ticketId },
+    order: { created_at: 'ASC' },
+  });
+
+  const timeline = await this.auditLogsRepo.find({
+    where: { ticket_id: ticketId },
+    order: { created_at: 'ASC' },
+  });
+
+  const attachments = await this.attachmentsService.listForTicket(ticketId);
+
+  return { ...ticket, replies, timeline, attachments };
+}
+
+async setPriority(
+  ticketId: number,
+  dto: SetPriorityDto,
+  actorUserId: number,
+): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.status !== 'SUBMITTED') {
+    throw new ConflictException(
+      `Cannot set priority: ticket is in status ${ticket.status}, expected SUBMITTED`,
+    );
+  }
+
+  const fromStatus = ticket.status;
+
+  ticket.priority = dto.priority;
+  ticket.status = 'ACCEPTED';
+  ticket.accepted_by_user_id = actorUserId;
+  ticket.accepted_at = new Date();
+
+  const savedTicket = await this.ticketsRepo.save(ticket);
+
+  const auditLog = this.auditLogsRepo.create({
+    ticket_id: ticket.id,
+    actor_id: actorUserId,
+    action: 'PRIORITY_SET',
+    from_value: fromStatus,
+    to_value: 'ACCEPTED',
+    note: `Priority set to ${dto.priority}`,
+  });
+
+  await this.auditLogsRepo.save(auditLog);
+
+  return savedTicket;
+}
+
+async assignDeveloper(
+  ticketId: number,
+  dto: AssignDeveloperDto,
+  actorUserId: number,
+): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.status !== 'ACCEPTED') {
+    throw new ConflictException(
+      `Cannot assign developer: ticket is in status ${ticket.status}, expected ACCEPTED`,
+    );
+  }
+
+  const fromStatus = ticket.status;
+  ticket.assigned_to_user_id = dto.developer_user_id;
+ticket.status = 'ASSIGNED';
+
+const savedTicket = await this.ticketsRepo.save(ticket);
+
+const auditLog = this.auditLogsRepo.create({
+  ticket_id: ticket.id,
+  actor_id: actorUserId,
+  action: 'ASSIGNED',
+  from_value: fromStatus,
+  to_value: 'ASSIGNED',
+  note: `Assigned to user ${dto.developer_user_id}`,
+});
+await this.auditLogsRepo.save(auditLog);
+
+await this.notificationsService.notifyUser(
+  dto.developer_user_id,
+  savedTicket.id,
+  'ASSIGNED_TO_YOU',
+  `Ticket ${savedTicket.tracking_number} was assigned to you`,
+);
+
+return savedTicket;
+}
+
+async addReply(
+  ticketId: number,
+  dto: CreateReplyDto,
+  actorUserId: number,
+): Promise<TicketReply> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.status === 'CLOSED') {
+    throw new ConflictException('Cannot reply to a closed ticket');
+  }
+
+  const fromStatus = ticket.status;
+
+  const reply = this.ticketRepliesRepo.create({
+    ticket_id: ticketId,
+    author_user_id: actorUserId,
+    message: dto.message,
+    is_closing_reply: dto.is_closing_reply ?? false,
+  });
+
+  const savedReply = await this.ticketRepliesRepo.save(reply);
+
+  if (ticket.status === 'ASSIGNED') {
+    ticket.status = 'IN_PROGRESS';
+    await this.ticketsRepo.save(ticket);
+
+    const auditLog = this.auditLogsRepo.create({
+      ticket_id: ticket.id,
+      actor_id: actorUserId,
+      action: 'REPLY_ADDED',
+      from_value: fromStatus,
+      to_value: 'IN_PROGRESS',
+      note: 'First reply — ticket moved to in progress',
+    });
+
+    await this.auditLogsRepo.save(auditLog);
+  } else {
+    const auditLog = this.auditLogsRepo.create({
+      ticket_id: ticket.id,
+      actor_id: actorUserId,
+      action: 'REPLY_ADDED',
+      from_value: ticket.status,
+      to_value: ticket.status,
+      note: 'Reply added',
+    });
+
+    await this.auditLogsRepo.save(auditLog);
+  }
+
+  return savedReply;
+}
+
+async addReplyAsDeveloper(
+  ticketId: number,
+  dto: CreateReplyDto,
+  actorUserId: number,
+): Promise<TicketReply> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.assigned_to_user_id !== actorUserId) {
+    throw new ForbiddenException('You are not the assigned developer for this ticket');
+  }
+
+  return this.addReply(ticketId, dto, actorUserId);
+}
+
+async completeTicket(
+  ticketId: number,
+  actorUserId: number,
+): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.status !== 'IN_PROGRESS') {
+    throw new ConflictException(
+      `Cannot complete ticket: ticket is in status ${ticket.status}, expected IN_PROGRESS`,
+    );
+  }
+
+  const fromStatus = ticket.status;
+
+  ticket.status = 'COMPLETED';
+  ticket.completed_at = new Date();
+
+  const savedTicket = await this.ticketsRepo.save(ticket);
+
+  const auditLog = this.auditLogsRepo.create({
+    ticket_id: ticket.id,
+    actor_id: actorUserId,
+    action: 'STATUS_CHANGED',
+    from_value: fromStatus,
+    to_value: 'COMPLETED',
+    note: 'Marked as completed by developer',
+  });
+
+  await this.auditLogsRepo.save(auditLog);
+
+  return savedTicket;
+}
+
+async completeTicketAsDeveloper(
+  ticketId: number,
+  actorUserId: number,
+): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.assigned_to_user_id !== actorUserId) {
+    throw new ForbiddenException('You are not the assigned developer for this ticket');
+  }
+  return this.completeTicket(ticketId, actorUserId);
+}
+
+async reassignTicket(
+  ticketId: number,
+  dto: ReassignDeveloperDto,
+  actorUserId: number,
+): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.assigned_to_user_id !== actorUserId) {
+    throw new ForbiddenException('You are not the assigned developer for this ticket');
+  }
+
+  if (!['ASSIGNED', 'IN_PROGRESS'].includes(ticket.status)) {
+    throw new ConflictException(
+      `Cannot reassign: ticket is in status ${ticket.status}, expected ASSIGNED or IN_PROGRESS`,
+    );
+  }
+
+  const targetDeveloper = await this.usersRepo.findOne({
+    where: {
+      id: dto.target_developer_user_id,
+      role: 'DEVELOPER',
+      is_active: true,
     },
-  ): Promise<{ data: Ticket[]; total: number; page: number; page_size: number }> {
-    const page = params.page && params.page > 0 ? params.page : 1;
-    const pageSize = params.page_size && params.page_size > 0 ? params.page_size : 25;
+  });
 
-    const query = this.ticketsRepo.createQueryBuilder('ticket');
-    query.where('ticket.assigned_to_user_id = :developerId', { developerId });
-
-    if (params.search) {
-      query.andWhere('ticket.tracking_number ILIKE :search', { search: `%${params.search}%` });
-    }
-    if (params.status) {
-      query.andWhere('ticket.status = :status', { status: params.status });
-    }
-    if (params.priority) {
-      query.andWhere('ticket.priority = :priority', { priority: params.priority });
-    }
-    if (params.software) {
-      query.andWhere('ticket.software = :software', { software: params.software });
-    }
-    if (params.piu_id) {
-      query.andWhere('ticket.piu_id = :piu_id', { piu_id: params.piu_id });
-    }
-
-    query.orderBy('ticket.created_at', 'DESC');
-    query.skip((page - 1) * pageSize).take(pageSize);
-
-    const [data, total] = await query.getManyAndCount();
-
-    return { data, total, page, page_size: pageSize };
+  if (!targetDeveloper) {
+    throw new NotFoundException('Target developer not found or inactive');
   }
 
-  // GET /developer/tickets/:id — 403 if the caller isn't the assignee.
-  async findOneForDeveloper(
-    ticketId: number,
-    actorUserId: number,
-  ): Promise<Ticket & { replies: TicketReply[]; timeline: AuditLog[]; attachments: any[] }> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
+  const previousAssigneeId = ticket.assigned_to_user_id;
 
-    if (ticket.assigned_to_user_id !== actorUserId) {
-      throw new ForbiddenException('You are not the assigned developer for this ticket');
-    }
+  ticket.assigned_to_user_id = dto.target_developer_user_id;
 
-    const replies = await this.ticketRepliesRepo.find({
-      where: { ticket_id: ticketId },
-      order: { created_at: 'ASC' },
-    });
+  const savedTicket = await this.ticketsRepo.save(ticket);
 
-    const timeline = await this.auditLogsRepo.find({
-      where: { ticket_id: ticketId },
-      order: { created_at: 'ASC' },
-    });
+  const auditLog = this.auditLogsRepo.create({
+    ticket_id: ticket.id,
+    actor_id: actorUserId,
+    action: 'REASSIGNED',
+    from_value: String(previousAssigneeId),
+    to_value: String(dto.target_developer_user_id),
+    note: dto.note ?? null,
+  });
 
-    const attachments = await this.attachmentsService.listForTicket(ticketId);
+  await this.auditLogsRepo.save(auditLog);
 
-    return { ...ticket, replies, timeline, attachments };
+  await this.notificationsService.notifyUser(
+    dto.target_developer_user_id,
+    savedTicket.id,
+    'ASSIGNED_TO_YOU',
+    `Ticket ${savedTicket.tracking_number} was reassigned to you`,
+  );
+
+  return savedTicket;
+}
+
+async routeToAdmin(
+  ticketId: number,
+  dto: RouteToAdminDto,
+  actorUserId: number,
+): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
   }
 
-  async setPriority(ticketId: number, dto: SetPriorityDto, actorUserId: number): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
-
-    if (ticket.status !== 'SUBMITTED') {
-      throw new ConflictException(
-        `Cannot set priority: ticket is in status ${ticket.status}, expected SUBMITTED`,
-      );
-    }
-
-    const fromStatus = ticket.status;
-
-    ticket.priority = dto.priority;
-    ticket.status = 'ACCEPTED';
-    ticket.accepted_by_user_id = actorUserId;
-    ticket.accepted_at = new Date();
-
-    const savedTicket = await this.ticketsRepo.save(ticket);
-
-    const auditLog = this.auditLogsRepo.create({
-      ticket_id: ticket.id,
-      actor_id: actorUserId,
-      action: 'PRIORITY_SET',
-      from_value: fromStatus,
-      to_value: 'ACCEPTED',
-      note: `Priority set to ${dto.priority}`,
-    });
-    await this.auditLogsRepo.save(auditLog);
-
-    return savedTicket;
+  if (ticket.assigned_to_user_id !== actorUserId) {
+    throw new ForbiddenException('You are not the assigned developer for this ticket');
   }
 
-  async assignDeveloper(
-    ticketId: number,
-    dto: AssignDeveloperDto,
-    actorUserId: number,
-  ): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
+  if (ticket.status === 'CLOSED') {
+    throw new ConflictException('Cannot route a closed ticket back to admin');
+  }
 
-    if (ticket.status !== 'ACCEPTED') {
-      throw new ConflictException(
-        `Cannot assign developer: ticket is in status ${ticket.status}, expected ACCEPTED`,
-      );
-    }
+  const fromStatus = ticket.status;
 
-    const fromStatus = ticket.status;
+  ticket.assigned_to_user_id = null;
+  ticket.status = 'ACCEPTED';
 
-    ticket.assigned_to_user_id = dto.developer_user_id;
-    ticket.status = 'ASSIGNED';
+  const savedTicket = await this.ticketsRepo.save(ticket);
 
-    const savedTicket = await this.ticketsRepo.save(ticket);
+  const auditLog = this.auditLogsRepo.create({
+    ticket_id: ticket.id,
+    actor_id: actorUserId,
+    action: 'ROUTED_TO_ADMIN',
+    from_value: fromStatus,
+    to_value: 'ACCEPTED',
+    note: dto.note ?? null,
+  });
 
-    const auditLog = this.auditLogsRepo.create({
-      ticket_id: ticket.id,
-      actor_id: actorUserId,
-      action: 'ASSIGNED',
-      from_value: fromStatus,
-      to_value: 'ASSIGNED',
-      note: `Assigned to user ${dto.developer_user_id}`,
-    });
-    await this.auditLogsRepo.save(auditLog);
+  await this.auditLogsRepo.save(auditLog);
 
-    await this.notificationsService.notifyUser(
-      dto.developer_user_id,
-      savedTicket.id,
-      'ASSIGNED_TO_YOU',
-      `Ticket ${savedTicket.tracking_number} was assigned to you`,
+  return savedTicket;
+}
+
+async closeTicket(ticketId: number, actorUserId: number): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
+  }
+
+  if (ticket.status !== 'COMPLETED') {
+    throw new ConflictException(
+      `Cannot close ticket: ticket is in status ${ticket.status}, expected COMPLETED`,
     );
-
-    return savedTicket;
   }
 
-  async addReply(
-    ticketId: number,
-    dto: CreateReplyDto,
-    actorUserId: number,
-  ): Promise<TicketReply> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
+  const fromStatus = ticket.status;
 
-    if (ticket.status === 'CLOSED') {
-      throw new ConflictException('Cannot reply to a closed ticket');
-    }
+  ticket.status = 'CLOSED';
+  ticket.closed_at = new Date();
 
-    const fromStatus = ticket.status;
+  const savedTicket = await this.ticketsRepo.save(ticket);
 
-    const reply = this.ticketRepliesRepo.create({
-      ticket_id: ticketId,
-      author_user_id: actorUserId,
-      message: dto.message,
-      is_closing_reply: dto.is_closing_reply ?? false,
-    });
-    const savedReply = await this.ticketRepliesRepo.save(reply);
+  const auditLog = this.auditLogsRepo.create({
+    ticket_id: ticket.id,
+    actor_id: actorUserId,
+    action: 'CLOSED',
+    from_value: fromStatus,
+    to_value: 'CLOSED',
+    note: 'Ticket closed by admin',
+  });
 
-    if (ticket.status === 'ASSIGNED') {
-      ticket.status = 'IN_PROGRESS';
-      await this.ticketsRepo.save(ticket);
+  await this.auditLogsRepo.save(auditLog);
 
-      const auditLog = this.auditLogsRepo.create({
-        ticket_id: ticket.id,
-        actor_id: actorUserId,
-        action: 'REPLY_ADDED',
-        from_value: fromStatus,
-        to_value: 'IN_PROGRESS',
-        note: 'First reply — ticket moved to in progress',
-      });
-      await this.auditLogsRepo.save(auditLog);
-    } else {
-      const auditLog = this.auditLogsRepo.create({
-        ticket_id: ticket.id,
-        actor_id: actorUserId,
-        action: 'REPLY_ADDED',
-        from_value: ticket.status,
-        to_value: ticket.status,
-        note: 'Reply added',
-      });
-      await this.auditLogsRepo.save(auditLog);
-    }
+  return savedTicket;
+}
 
-    return savedReply;
+async reopenTicket(ticketId: number, actorUserId: number): Promise<Ticket> {
+  const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
+
+  if (!ticket) {
+    throw new NotFoundException(`No ticket found with id ${ticketId}`);
   }
+  if (ticket.status !== 'CLOSED') {
+  throw new ConflictException(
+    `Cannot reopen ticket: ticket is in status ${ticket.status}, expected CLOSED`,
+  );
+}
 
-  async addReplyAsDeveloper(
-    ticketId: number,
-    dto: CreateReplyDto,
-    actorUserId: number,
-  ): Promise<TicketReply> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
+const fromStatus = ticket.status;
 
-    if (ticket.assigned_to_user_id !== actorUserId) {
-      throw new ForbiddenException('You are not the assigned developer for this ticket');
-    }
+let assigneeStillActive = false;
+if (ticket.assigned_to_user_id) {
+  const assignee = await this.usersRepo.findOne({
+    where: { id: ticket.assigned_to_user_id, is_active: true },
+  });
+  assigneeStillActive = !!assignee;
+}
 
-    return this.addReply(ticketId, dto, actorUserId);
-  }
+ticket.status = assigneeStillActive ? 'ASSIGNED' : 'ACCEPTED';
+ticket.closed_at = null;
 
-  async completeTicket(ticketId: number, actorUserId: number): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
+if (!assigneeStillActive) {
+  ticket.assigned_to_user_id = null;
+}
 
-    if (ticket.status !== 'IN_PROGRESS') {
-      throw new ConflictException(
-        `Cannot complete ticket: ticket is in status ${ticket.status}, expected IN_PROGRESS`,
-      );
-    }
+const savedTicket = await this.ticketsRepo.save(ticket);
 
-    const fromStatus = ticket.status;
+const auditLog = this.auditLogsRepo.create({
+  ticket_id: ticket.id,
+  actor_id: actorUserId,
+  action: 'REOPENED',
+  from_value: fromStatus,
+  to_value: savedTicket.status,
+  note: 'Ticket reopened by admin',
+});
 
-    ticket.status = 'COMPLETED';
-    ticket.completed_at = new Date();
+await this.auditLogsRepo.save(auditLog);
 
-    const savedTicket = await this.ticketsRepo.save(ticket);
-
-    const auditLog = this.auditLogsRepo.create({
-      ticket_id: ticket.id,
-      actor_id: actorUserId,
-      action: 'STATUS_CHANGED',
-      from_value: fromStatus,
-      to_value: 'COMPLETED',
-      note: 'Marked as completed by developer',
-    });
-    await this.auditLogsRepo.save(auditLog);
-
-    return savedTicket;
-  }
-
-  async completeTicketAsDeveloper(ticketId: number, actorUserId: number): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
-
-    if (ticket.assigned_to_user_id !== actorUserId) {
-      throw new ForbiddenException('You are not the assigned developer for this ticket');
-    }
-
-    return this.completeTicket(ticketId, actorUserId);
-  }
-
-  async reassignTicket(
-    ticketId: number,
-    dto: ReassignDeveloperDto,
-    actorUserId: number,
-  ): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
-
-    if (ticket.assigned_to_user_id !== actorUserId) {
-      throw new ForbiddenException('You are not the assigned developer for this ticket');
-    }
-
-    if (!['ASSIGNED', 'IN_PROGRESS'].includes(ticket.status)) {
-      throw new ConflictException(
-        `Cannot reassign: ticket is in status ${ticket.status}, expected ASSIGNED or IN_PROGRESS`,
-      );
-    }
-
-    const targetDeveloper = await this.usersRepo.findOne({
-      where: { id: dto.target_developer_user_id, role: 'DEVELOPER', is_active: true },
-    });
-    if (!targetDeveloper) {
-      throw new NotFoundException('Target developer not found or inactive');
-    }
-
-    const previousAssigneeId = ticket.assigned_to_user_id;
-
-    ticket.assigned_to_user_id = dto.target_developer_user_id;
-
-    const savedTicket = await this.ticketsRepo.save(ticket);
-
-    const auditLog = this.auditLogsRepo.create({
-      ticket_id: ticket.id,
-      actor_id: actorUserId,
-      action: 'REASSIGNED',
-      from_value: String(previousAssigneeId),
-      to_value: String(dto.target_developer_user_id),
-      note: dto.note ?? null,
-    });
-    await this.auditLogsRepo.save(auditLog);
-
-    await this.notificationsService.notifyUser(
-      dto.target_developer_user_id,
-      savedTicket.id,
-      'ASSIGNED_TO_YOU',
-      `Ticket ${savedTicket.tracking_number} was reassigned to you`,
-    );
-
-    return savedTicket;
-  }
-
-  async routeToAdmin(
-    ticketId: number,
-    dto: RouteToAdminDto,
-    actorUserId: number,
-  ): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
-
-    if (ticket.assigned_to_user_id !== actorUserId) {
-      throw new ForbiddenException('You are not the assigned developer for this ticket');
-    }
-
-    if (ticket.status === 'CLOSED') {
-      throw new ConflictException('Cannot route a closed ticket back to admin');
-    }
-
-    const fromStatus = ticket.status;
-
-    ticket.assigned_to_user_id = null;
-    ticket.status = 'ACCEPTED';
-
-    const savedTicket = await this.ticketsRepo.save(ticket);
-
-    const auditLog = this.auditLogsRepo.create({
-      ticket_id: ticket.id,
-      actor_id: actorUserId,
-      action: 'ROUTED_TO_ADMIN',
-      from_value: fromStatus,
-      to_value: 'ACCEPTED',
-      note: dto.note ?? null,
-    });
-    await this.auditLogsRepo.save(auditLog);
-
-    return savedTicket;
-  }
-
-  async closeTicket(ticketId: number, actorUserId: number): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
-
-    if (ticket.status !== 'COMPLETED') {
-      throw new ConflictException(
-        `Cannot close ticket: ticket is in status ${ticket.status}, expected COMPLETED`,
-      );
-    }
-
-    const fromStatus = ticket.status;
-
-    ticket.status = 'CLOSED';
-    ticket.closed_at = new Date();
-
-    const savedTicket = await this.ticketsRepo.save(ticket);
-
-    const auditLog = this.auditLogsRepo.create({
-      ticket_id: ticket.id,
-      actor_id: actorUserId,
-      action: 'CLOSED',
-      from_value: fromStatus,
-      to_value: 'CLOSED',
-      note: 'Ticket closed by admin',
-    });
-    await this.auditLogsRepo.save(auditLog);
-
-    return savedTicket;
-  }
-
-  async reopenTicket(ticketId: number, actorUserId: number): Promise<Ticket> {
-    const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
-    if (!ticket) {
-      throw new NotFoundException(`No ticket found with id ${ticketId}`);
-    }
-
-    if (ticket.status !== 'CLOSED') {
-      throw new ConflictException(
-        `Cannot reopen ticket: ticket is in status ${ticket.status}, expected CLOSED`,
-      );
-    }
-
-    const fromStatus = ticket.status;
-
-    let assigneeStillActive = false;
-    if (ticket.assigned_to_user_id) {
-      const assignee = await this.usersRepo.findOne({
-        where: { id: ticket.assigned_to_user_id, is_active: true },
-      });
-      assigneeStillActive = !!assignee;
-    }
-
-    ticket.status = assigneeStillActive ? 'ASSIGNED' : 'ACCEPTED';
-    ticket.closed_at = null;
-    if (!assigneeStillActive) {
-      ticket.assigned_to_user_id = null;
-    }
-
-    const savedTicket = await this.ticketsRepo.save(ticket);
-
-    const auditLog = this.auditLogsRepo.create({
-      ticket_id: ticket.id,
-      actor_id: actorUserId,
-      action: 'REOPENED',
-      from_value: fromStatus,
-      to_value: savedTicket.status,
-      note: 'Ticket reopened by admin',
-    });
-    await this.auditLogsRepo.save(auditLog);
-
-    return savedTicket;
-  }
+return savedTicket;
+}
 }

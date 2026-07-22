@@ -15,7 +15,6 @@ import { CategoriesModule } from './categories/categories.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DevelopersModule } from './developers/developers.module';
 import { AttachmentsModule } from './attachments/attachments.module';
-import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -32,8 +31,6 @@ import { MailModule } from './mail/mail.module';
         rejectUnauthorized: false,
       },
     }),
-
-    MailModule,
     AuthModule,
     PrismaModule,
     ReportsModule,

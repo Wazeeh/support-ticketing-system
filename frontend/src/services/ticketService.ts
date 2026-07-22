@@ -10,7 +10,6 @@ export interface SubmitTicketResponse {
   tracking_number: string;
   status: string;
   created_at: string;
-  confirmation_email_sent: boolean;
 }
 
 export const ticketService = {

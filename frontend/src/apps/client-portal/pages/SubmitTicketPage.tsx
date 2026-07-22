@@ -26,7 +26,6 @@ export function SubmitTicketPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trackingNumber, setTrackingNumber] = useState<string | null>(null);
-  const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const handleSoftwareChange = (value: SoftwareType) => {
@@ -161,10 +160,6 @@ export function SubmitTicketPage() {
       setTrackingNumber(
         response.data.tracking_number,
       );
-
-      setConfirmationEmailSent(
-        response.data.confirmation_email_sent,
-      );
     } catch (err: unknown) {
       const possibleError = err as {
         response?: {
@@ -248,44 +243,17 @@ export function SubmitTicketPage() {
           </button>
         </div>
 
-        {confirmationEmailSent ? (
-          <p
-            style={{
-              marginTop: '20px',
-              color: '#6b7280',
-              fontSize: '0.9rem',
-              lineHeight: 1.6,
-            }}
-          >
-            A confirmation email has been sent to{' '}
-            <strong>{email}</strong>. Use this tracking number
-            to check your ticket status anytime.
-          </p>
-        ) : (
-          <p
-            style={{
-              marginTop: '20px',
-              color: '#d97706',
-              fontSize: '0.9rem',
-              lineHeight: 1.6,
-            }}
-          >
-            Your ticket was submitted successfully, but the
-            confirmation email could not be sent. Please save
-            the tracking number.
-          </p>
-        )}
-
-        {error && (
-          <p
-            style={{
-              marginTop: '16px',
-              color: '#dc2626',
-            }}
-          >
-            {error}
-          </p>
-        )}
+       <p
+  style={{
+    marginTop: '20px',
+    color: '#6b7280',
+    fontSize: '0.9rem',
+    lineHeight: 1.6,
+  }}
+>
+  Your ticket has been submitted successfully. Please save
+  your tracking number to check your ticket status anytime.
+</p>
 
         <div
           style={{
