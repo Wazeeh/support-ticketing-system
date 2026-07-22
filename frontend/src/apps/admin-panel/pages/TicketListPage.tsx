@@ -34,7 +34,7 @@ export function TicketListPage() {
   const totalPages = data
     ? Math.max(
         1,
-        Math.ceil(data.pagination.total / data.pagination.page_size),
+        Math.ceil(data.total / data.page_size),
       )
     : 1;
 
