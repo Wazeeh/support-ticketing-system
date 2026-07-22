@@ -6,7 +6,7 @@ interface AttachmentListProps {
   attachments: Attachment[];
 }
 
-export function AttachmentList({ ticketId, attachments }: AttachmentListProps) {
+export function AttachmentList({ attachments }: AttachmentListProps) {
   if (attachments.length === 0) return null;
 
   const handleDownload = async (attachmentId: number) => {

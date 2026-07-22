@@ -158,10 +158,7 @@ export const ticketService = {
       `/tickets/${id}/timeline`,
     ),
 
-  getDownloadUrl: (
-    ticketId: number,
-    attachmentId: number,
-  ) =>
+  getDownloadUrl: (attachmentId: number) =>
     apiClient.get(
       `/attachments/${attachmentId}/download`,
     ),
