@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Param, ParseIntPipe, UseGuards, Req, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Patch, Param, ParseIntPipe, Query, UseGuards, Req, NotFoundException } from '@nestjs/common';
 import type { Request } from 'express';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -9,9 +9,9 @@ export class NotificationsController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  async findMine(@Req() req: Request) {
+  async findMine(@Query('unread_only') unreadOnly: string | undefined, @Req() req: Request) {
     const userId = (req.user as any).userId;
-    return this.notificationsService.findForUser(userId);
+    return this.notificationsService.findForUser(userId, unreadOnly === 'true');
   }
 
   @Patch(':id/read')
