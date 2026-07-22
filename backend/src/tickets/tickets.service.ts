@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Ticket } from './entities/ticket.entity';
 import { AuditLog } from '../audit-logs/entities/audit-log.entity';
 import { TicketReply } from '../ticket-replies/entities/ticket-reply.entity';
@@ -73,7 +73,19 @@ export class TicketsService {
 
   // GET /tickets/:id/timeline — admin sees any ticket's timeline;
   // developer only sees timelines for tickets assigned to them.
-  async getTimeline(ticketId: number, actorUserId: number, role: string): Promise<AuditLog[]> {
+  async getTimeline(ticketId: number, actorUserId: number, role: string): Promise<{
+    events: Array<{
+      id: number;
+      action: string;
+      from_value: string | null;
+      to_value: string | null;
+      note: string | null;
+      timestamp: Date;
+      actor_name: string | null;
+      actor_role: string | null;
+    }>;
+    duration_summary: { time_in_status: Record<string, number> };
+  }> {
     const ticket = await this.ticketsRepo.findOne({ where: { id: ticketId } });
     if (!ticket) {
       throw new NotFoundException(`No ticket found with id ${ticketId}`);
@@ -83,10 +95,63 @@ export class TicketsService {
       throw new ForbiddenException('You are not the assigned developer for this ticket');
     }
 
-    return this.auditLogsRepo.find({
+    const logs = await this.auditLogsRepo.find({
       where: { ticket_id: ticketId },
       order: { created_at: 'ASC' },
     });
+
+    const actorIds = [...new Set(
+      logs
+        .map((log) => log.actor_id)
+        .filter((id): id is number => id != null),
+    )];
+    const actors = actorIds.length
+      ? await this.usersRepo.find({ where: { id: In(actorIds) } })
+      : [];
+    const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
+
+    const events = logs.map((log) => {
+      const actor = log.actor_id != null
+        ? actorsById.get(log.actor_id)
+        : undefined;
+
+      return {
+        id: log.id,
+        action: log.action,
+        from_value: log.from_value,
+        to_value: log.to_value,
+        note: log.note,
+        timestamp: log.created_at,
+        actor_name: actor?.full_name ?? null,
+        actor_role: actor?.role ?? null,
+      };
+    });
+
+    const statusChanges = logs.filter(
+      (log) => log.action === 'STATUS_CHANGED',
+    );
+    const time_in_status: Record<string, number> = {};
+
+    for (let index = 0; index < statusChanges.length; index++) {
+      const current = statusChanges[index];
+      const next = statusChanges[index + 1];
+      const statusName = current.to_value ?? 'UNKNOWN';
+      const endTime = next
+        ? next.created_at.getTime()
+        : Date.now();
+      const hours =
+        (endTime - current.created_at.getTime()) /
+        (1000 * 60 * 60);
+
+      time_in_status[statusName] =
+        (time_in_status[statusName] ?? 0) +
+        Math.round(hours * 100) / 100;
+    }
+
+    return {
+      events,
+      duration_summary: { time_in_status },
+    };
   }
 
   // GET /admin/tickets/:id — admin has no ownership restriction.
