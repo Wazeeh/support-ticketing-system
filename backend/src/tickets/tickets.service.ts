@@ -130,12 +130,23 @@ export class TicketsService {
 
   async findByTrackingNumber(
     trackingNumber: string,
-  ): Promise<Ticket | null> {
-    return this.ticketsRepo.findOne({
+  ): Promise<(Ticket & { replies: TicketReply[] }) | null> {
+    const ticket = await this.ticketsRepo.findOne({
       where: {
         tracking_number: trackingNumber,
       },
     });
+
+    if (!ticket) {
+      return null;
+    }
+
+    const replies = await this.ticketRepliesRepo.find({
+      where: { ticket_id: ticket.id },
+      order: { created_at: 'ASC' },
+    });
+
+    return { ...ticket, replies };
   }
 
   async findOneDetail(

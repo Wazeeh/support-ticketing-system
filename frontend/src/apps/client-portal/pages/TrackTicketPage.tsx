@@ -48,8 +48,8 @@ export function TrackTicketPage() {
             <StatusBadge status={result.status} />
             <PriorityBadge priority={result.priority} />
           </div>
-          <p><strong>Submitted:</strong> {new Date(result.submitted_at).toLocaleString()}</p>
-          <p><strong>Last update:</strong> {new Date(result.last_update_at).toLocaleString()}</p>
+          <p><strong>Submitted:</strong> {new Date(result.created_at).toLocaleString()}</p>
+          <p><strong>Last update:</strong> {new Date(result.updated_at).toLocaleString()}</p>
 
           {result.replies?.length > 0 && (
             <div style={{ marginTop: '16px' }}>
