@@ -1,7 +1,6 @@
 import { ticketService } from '../../services/ticketService';
 
 interface Attachment { id: number; file_name: string; size_bytes: number }
-
 interface AttachmentListProps {
   ticketId: number;
   attachments: Attachment[];
@@ -11,7 +10,7 @@ export function AttachmentList({ ticketId, attachments }: AttachmentListProps) {
   if (attachments.length === 0) return null;
 
   const handleDownload = async (attachmentId: number) => {
-    const res = await ticketService.getDownloadUrl(ticketId, attachmentId);
+    const res = await ticketService.getDownloadUrl(attachmentId);
     window.open((res.data as any).url, '_blank');
   };
 

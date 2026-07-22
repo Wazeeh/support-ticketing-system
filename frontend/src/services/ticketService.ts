@@ -163,6 +163,6 @@ export const ticketService = {
     attachmentId: number,
   ) =>
     apiClient.get(
-      `/tickets/${ticketId}/attachments/${attachmentId}/download`,
+      `/attachments/${attachmentId}/download`,
     ),
 };
